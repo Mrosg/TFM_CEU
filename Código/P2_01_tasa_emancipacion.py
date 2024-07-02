@@ -1,23 +1,28 @@
 import pandas as pd
 import numpy as np
-from scipy.stats import binom
+from scipy.stats import norm
+import math
 
 ruta = "/Users/miguelrosgarcia/Desktop/Máster/Curso/TFM/Datasets/Definitivos/Auxiliares/DATA_CATEGORIZADO.csv"
 
 data = pd.read_csv(ruta)
 
-# Calcular la probabilidad de encontrar empleo
-data['probabilidad_empleo'] = 1 - (data['tasa_paro'] / 100)
+# Calcular la probabilidad de encontrar empleo.
 
-# Tamaño de la muestra
+probabilidad_paro = (data["tasa_paro"]/100)
+probabilidad_empleo = 1 - (data["tasa_paro"]/100)
+
 n = 50
-# Umbral de éxito (al menos 1/3)
-k = n // 3
+mu = probabilidad_paro.mean() # La media.
+pq_n = ((probabilidad_empleo * probabilidad_paro) / n)
+sigma = math.sqrt(pq_n.mean()) # Desviación estándar.
 
-# Calcular la probabilidad de que al menos 1/3 tenga empleo
-data['tasa_emancipacion'] = data['probabilidad_empleo'].apply(lambda p: binom.cdf(n, n, p) - binom.cdf(k-1, n, p))
+# Calcular la CDF para una nueva variable x
+cdf_values = norm.cdf(probabilidad_paro, mu, sigma)
+data["tasa_emancipacion"] = ((1 - cdf_values)*100).round(2)
+
 
 col = data.pop("tasa_emancipacion")
-data.insert(2, "tasa_emancipacion", col)
+data.insert(9, "tasa_emancipacion", col)
 
-data.to_csv("/Users/miguelrosgarcia/Desktop/Máster/Curso/TFM/Datasets/Definitivos/Auxiliares/PRUEBA_BINOMIAL.csv", index = False)
+data.to_csv("/Users/miguelrosgarcia/Desktop/Máster/Curso/TFM/Datasets/Definitivos/DATASET_FINAL.csv", index = False)
