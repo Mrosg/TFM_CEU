@@ -1,0 +1,15 @@
+El orden para ejecutar los archivos .PY es el siguiente:
+
+    1. "poblacion.py". Este código unifica y limpia todos los excel con los datos de población por distrito y mes.
+
+    2. "script_estimaciones.r". Este código de R estima el número de población por distrito y mes de aquellos registros
+        sin datos mediante el filtro de Kalman.
+
+    3. "tablas.py". Este código unifica todo el resto de variables y le da formato a un dataset previo al final.
+
+    4. "P2_0_categorizado.py". Este código utiliza el dataset resultante del paso 3 y categoriza los distritos en una
+        nueva variable llamada "categoria".
+        
+    5. "P2_01_tasa_emancipacion.py". Este código genera las probabilidades de estar emancipado en cada distrito y cada mes
+        en base a una distribución de probabilidad normal. El resultado es "DATASET_FINAL.csv" que es el archivo
+        con el que se desarrollará el resto del trabajo.
