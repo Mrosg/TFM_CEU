@@ -79,17 +79,22 @@ ruta_boxplot_precio_distrito_interactivo = "/Users/miguelrosgarcia/Desktop/Más
 
     ## Calculo los cuartiles.
 
-q1 = dataset_aux["precio_m2"].quantile(0.25)
-q2 = dataset_aux["precio_m2"].quantile(0.5)
-q3 = dataset_aux["precio_m2"].quantile(0.75)
+q1 = dataset_aux["precio_m2"].quantile(0.20)
+q2 = dataset_aux["precio_m2"].quantile(0.40)
+q3 = dataset_aux["precio_m2"].quantile(0.60)
+q4 = dataset_aux["precio_m2"].quantile(0.80)
 
     ## Defino una función para categorizar los datos.
 
 def categorizar(precio_m2):
     if precio_m2 <= q1:
         return "Bajo"
+    elif precio_m2 <= q2:
+        return "Medio-Bajo"
     elif precio_m2 <= q3:
         return "Medio"
+    elif precio_m2 <= q4:
+        return "Medio-Alto"
     else:
         return "Alto"
 
@@ -99,13 +104,15 @@ dataset_aux["categoria"] = dataset_aux["precio_m2"].apply(categorizar)
 
     ## Muestreo aleatorio estratificado sin duplicados.
 
-df_pobre = dataset_aux[dataset_aux["categoria"] == "Bajo"]
+df_bajo = dataset_aux[dataset_aux["categoria"] == "Bajo"]
+df_medio_bajo = dataset_aux[dataset_aux["categoria"] == "Medio-Bajo"]
 df_medio = dataset_aux[dataset_aux["categoria"] == "Medio"]
-df_rico = dataset_aux[dataset_aux["categoria"] == "Alto"]
+df_medio_alto = dataset_aux[dataset_aux["categoria"] == "Medio-Alto"]
+df_alto = dataset_aux[dataset_aux["categoria"] == "Alto"]
 
     ## Combino las muestras en un solo dataframe.
 
-df_categorizado = pd.concat([df_pobre, df_medio, df_rico])
+df_categorizado = pd.concat([df_bajo, df_medio_bajo, df_medio, df_medio_alto, df_alto])
 
     ## Ordeno por fecha y el orden de la nueva variable.
 
@@ -133,14 +140,24 @@ print(recuento_categoria)
 '''
 Los resultados de la categorización de los distritos son los siguientes:
     - Número de registros de cada categoría:
-        · Bajo: 755
-        · Medio: 1477
-        · Alto: 738
-    - Los límites para ser "Bajo", "Medio" y "Alto" son los siguientes:
-        · Bajo: 7.4 €/m2 - 10.5 €/m2
-        · Medio: 10.6 €/m2 - 14.4 €/m2
-        · Alto: 14.5 €/m2 - 23.5 €/m2
+        · Bajo: 615
+        · Medio-Bajo: 573
+        · Medio: 621
+        · Medio-Alto: 573
+        · Alto: 594
+    - Los límites para ser de cada categoría son los siguientes:
+        · Bajo: 7.4€/m2 - 10.0€/m2
+        · Medio-Bajo: 10.1€/m2 - 11.4€/m2
+        · Medio: 11.5€/m2 - 12.8€/m2
+        · Medio-Alto: 12.9€/m2 - 15.0€/m2
+        · Alto: 15.1€/m2 - 23.5€/m2
 '''
+
+    ## Aplico el formato de fecha que quiero.
+
+df_categorizado["fecha"] = pd.to_datetime(df_categorizado["fecha"], format = "%m-%Y")
+df_categorizado = df_categorizado.sort_values(by = "fecha")
+df_categorizado["fecha"] = df_categorizado["fecha"].dt.strftime("%m-%Y")
 
     ## Exporto el CSV.
 

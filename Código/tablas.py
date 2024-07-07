@@ -560,6 +560,16 @@ print(paro_poblacion.info())
 
 alquiler = pd.read_csv("/Users/miguelrosgarcia/Desktop/Máster/Curso/TFM/Datasets/Definitivos/ALQUILER.csv")
 
+    ## Doy el formato adecuado a las variables de variación del precio del m2.
+
+alquiler["variacion_mensual"] = alquiler["variacion_mensual"].str.replace(',', '.').astype(float)
+alquiler["variacion_trimestral"] = alquiler["variacion_trimestral"].str.replace(',', '.').astype(float)
+alquiler["variacion_anual"] = alquiler["variacion_anual"].str.replace(',', '.').astype(float)
+
+alquiler["variacion_mensual"].dtype, alquiler["variacion_mensual"].head()
+alquiler["variacion_trimestral"].dtype, alquiler["variacion_trimestral"].head()
+alquiler["variacion_anual"].dtype, alquiler["variacion_anual"].head()
+
     ## Combino todo el dataset y lo exporto.
 
 previo_dataset = pd.merge(paro_poblacion, alquiler, on = ["fecha", "distrito"])
@@ -689,11 +699,15 @@ previo_dataset.to_csv("/Users/miguelrosgarcia/Desktop/Máster/Curso/TFM/Datasets
 
 dataset = pd.read_csv("/Users/miguelrosgarcia/Desktop/Máster/Curso/TFM/Datasets/Brutos/BRUTO_DATASET.csv")
 
-# Calcular el porcentaje de "paro_total" sobre "poblacion" y almacenarlo en la variable "porcentaje_paro"
+    ## Calculo el porcentaje de "paro_total" sobre "poblacion" y almacenarlo en la variable "porcentaje_paro".
+
 dataset["porcentaje_paro"] = (dataset["paro_total"] / dataset["poblacion"]) * 100
 
-# Convertir "porcentaje_paro" a float y reemplazar primero los puntos por comas
+    ## Convierto "porcentaje_paro" a float y reemplazar primero los puntos por comas.
+
 dataset["porcentaje_paro"] = dataset["porcentaje_paro"].round(2).apply(lambda x: str(x).replace('.', ','))
+
+    ## Pongo nombre a las columnas y las ordeno.
 
 dataset_columnas = ["fecha", "distrito", "precio_m2", "variacion_mensual", "variacion_trimestral", "variacion_anual", "poblacion",
                         "paro_total", "paro_hombres_total", "paro_mujeres_total", "paro_16_19_total", "paro_16_19_hombres",
@@ -795,5 +809,11 @@ dataset_orden_columnas = ["fecha", "distrito", "precio_m2", "variacion_mensual",
                         "actividades_organizaciones_organismos_extraterritoriales_mujeres", "sin_empleo_anterior_mujeres"]
 
 dataset = dataset.reindex(columns = dataset_orden_columnas)
+
+    ## Aplico el formato de fecha que quiero.
+
+dataset["fecha"] = pd.to_datetime(dataset["fecha"], format = "%m-%Y")
+dataset = dataset.sort_values(by = "fecha")
+dataset["fecha"] = dataset["fecha"].dt.strftime("%m-%Y")
 
 dataset.to_csv("/Users/miguelrosgarcia/Desktop/Máster/Curso/TFM/Datasets/Definitivos/DATASET.csv", index = False)
