@@ -32,7 +32,6 @@ escalar = StandardScaler()
 data_estandar = data.copy()
 data_estandar[numericas] = escalar.fit_transform(data[numericas])
 
-print(data_estandar.head()) # Vemos los datos estandarizados.
 media_estandar_preciom2 = data_estandar["precio_m2"].mean() # Compruebo la media cero de una variable al azar.
 sd_estandar_preciom2 = data_estandar["precio_m2"].std() # Compruebo la desviación típica uno de la variable.
 print("La media estandarizada de precio_m2 es: ", media_estandar_preciom2)

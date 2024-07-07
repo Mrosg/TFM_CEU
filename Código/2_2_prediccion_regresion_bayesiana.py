@@ -1,241 +1,388 @@
 import pandas as pd
+import numpy as np
 from sklearn.linear_model import BayesianRidge
 from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
+from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV, RepeatedKFold
 from sklearn.linear_model import BayesianRidge
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
+import scipy.stats as stats
+
+# MODELO DE REGRESIÓN BAYESIANA SIN CATEGORÍA.
+
+    ## Cargo mi dataset.
 
 ruta = "/Users/miguelrosgarcia/Desktop/Máster/Curso/TFM/Datasets/Definitivos/DATASET_FINAL.csv"
 data = pd.read_csv(ruta)
 
-# REGRESIÓN BAYESIANA.
+    ## Selección de características y variable objetivo
 
-ruta = "/Users/miguelrosgarcia/Desktop/Máster/Curso/TFM/Datasets/Definitivos/DATASET_FINAL.csv"
-data = pd.read_csv(ruta)
+variables_independientes = ["precio_m2", "tasa_paro"]
+variable_dependiente = "tasa_emancipacion"
 
-    ## Selección de características.
+x = data[variables_independientes].values
+y = data[variable_dependiente].values
 
-selected_features = ["precio_m2", "tasa_paro"]
+    ## Normalizo mis datos.
 
-    ## Filtrar el dataframe para las características seleccionadas y la variable objetivo.
+escalar = StandardScaler()
+x_scaled = escalar.fit_transform(x)
 
-x = data[selected_features].values
-y = data["tasa_emancipacion"].values
+    ## Divido los datos en entrenamiento y prueba (70% entrenamiento y 30% prueba).
 
-    ## Normalizo las características.
+x_train, x_test, y_train, y_test = train_test_split(x_scaled, y, test_size = 0.3, random_state = 42)
 
-scaler = StandardScaler()
-x_scaled = scaler.fit_transform(x)
-
-    ## Divido los datos en entrenamiento y prueba.
-
-x_train, x_test, y_train, y_test = train_test_split(x_scaled, y, test_size = 0.2, random_state = 42)
-
-    ## Defino y entrenar el modelo de regresión bayesiana.
+    ## Defino el modelo de regresión bayesiana.
 
 model = BayesianRidge()
+
+    ## Hago una validación cruzada con 20.000 simulaciones.
+
+n_splits = 10  # Número de pliegues
+n_repeats = 2000  # Número de repeticiones (10 pliegues x 2000 repeticiones = 20.000 simulaciones)
+rkf = RepeatedKFold(n_splits = n_splits, n_repeats = n_repeats, random_state = 42)
+cv_scores = cross_val_score(model, x_scaled, y, cv = rkf, scoring = "neg_mean_squared_error")
+cv_mse = -cv_scores.mean()
+cv_std = cv_scores.std()
+print(f"Cross-Validated MSE: {cv_mse:.4f} ± {cv_std:.4f}")
+
+    ## Entreno el modelo con el conjunto de entrenamiento.
+
 model.fit(x_train, y_train)
 
-    ## Hago las predicciones.
+    ## Hago las predicciones sobre el conjunto de prueba.
 
 y_pred = model.predict(x_test)
 
-    ## Calculo el MSE.
+    ## Calculo el MSE (Error Cuadrático Medio).
 
 mse = mean_squared_error(y_test, y_pred)
-print(f"MSE: {mse}")
+print(f"MSE: {mse:.4f}")
 
-    ## Creo un dataframe para comparar las predicciones con los valores reales.
+    ## Hago un dataframe para comparar las predicciones con los valores reales.
 
-results = pd.DataFrame({
+resultados = pd.DataFrame({
     "Real": y_test,
     "Predicción": y_pred
 })
 
-    ## Extrae los coeficientes y el intercepto.
+    ## Extraigo los coeficientes y el intercept del modelo.
 
 intercept = model.intercept_
 coef = model.coef_
 
-    ## Crea un dataframe para los coeficientes.
+    ## Obtengo la matriz de covarianza de los coeficientes.
 
-coef_summary = pd.DataFrame({
-    "Feature": ["Intercept"] + selected_features,
-    "Coefficient": [intercept] + list(coef)
+cov_matrix = model.sigma_
+
+    ## Calculo las desviaciones estándar de los coeficientes.
+
+intercept_std = np.sqrt(model.alpha_)  # Desviación estándar del intercept.
+coef_std = np.sqrt(np.diag(cov_matrix))  # Desviaciones estándar de los coeficientes.
+
+    ## Hago un dataframe para los intervalos de confianza del modelo.
+
+intervalos_confianza = pd.DataFrame({
+    "Características": ["Intercept"] + variables_independientes,
+    "Coeficiente": [intercept] + list(coef),
+    "Límite Inferior": [intercept - 1.96 * intercept_std] + list(coef - 1.96 * coef_std),
+    "Límite Superior": [intercept + 1.96 * intercept_std] + list(coef + 1.96 * coef_std)
 })
 
-    ## Muestro el resumen de los coeficientes.
+    ## Vemos el resumen del modelo con intervalos de confianza.
 
-print("Summary del modelo de Regresión Bayesiana")
-print(coef_summary)
+print("Resumen del modelo de regresión bayesiana:")
+print(intervalos_confianza)
 
-    ## Visualizo las predicciones versus los valores reales.
+    ## Visualizo las distribuciones de probabilidad de los coeficientes.
+
+x_vals = np.linspace(-30, 30, 400)
+colors = ["blue", "green", "red"]
 
 plt.figure(figsize = (12, 6))
-plt.plot(results["Real"].values, label = "Valores reales", color = "blue")
-plt.plot(results["Predicción"].values, label = "Predicciones", color = "red", linestyle = "dashed")
+
+for i, feature in enumerate(["Intercept"] + variables_independientes):
+    mean = intervalos_confianza["Coeficiente"].iloc[i]
+    std = intercept_std if i == 0 else coef_std[i - 1]
+    plt.plot(x_vals, stats.norm.pdf(x_vals, mean, std), label = feature, color = colors[i % len(colors)])
+    
 plt.legend()
-plt.title("Regresión bayesiana. Comparación de valores reales y predicciones")
+plt.title("Distribuciones de probabilidad de los coeficientes del modelo de regresión bayesiana")
+plt.xlabel("Valor del Coeficiente")
+plt.ylabel("Densidad de Probabilidad")
+plt.show()
+
+    ## Visualizo las predicciones vs los valores reales.
+
+plt.figure(figsize = (12, 6))
+plt.plot(resultados["Real"].values, label = "Valores reales", color = "blue")
+plt.plot(resultados["Predicción"].values, label = "Predicciones", color = "red", linestyle = "dashed")
+plt.legend()
+plt.title("Regresión bayesiana: comparación de valores reales y predicciones")
 plt.xlabel("Índice")
 plt.ylabel("Tasa de emancipación")
 plt.show()
 
+    ## Hago un histograma de los errores cuadráticos medios de la validación cruzada.
+
+plt.figure(figsize = (12, 6))
+plt.hist(-cv_scores, bins = 30, edgecolor = "black", alpha = 0.7, color = "turquoise")
+plt.title("Distribución de los Errores Cuadráticos Medios en la validación cruzada")
+plt.xlabel("Error Cuadrático Medio")
+plt.ylabel("Frecuencia")
+plt.show()
+
+    ## Desnormalizo los coeficientes para interpretarlos en la escala original.
+
+std_precio_m2 = data["precio_m2"].std()
+std_tasa_paro = data["tasa_paro"].std()
+std_tasa_emancipacion = data["tasa_emancipacion"].std()
+
+coef_precio_m2_original = coef[0] * (std_precio_m2 / std_tasa_emancipacion)
+coef_tasa_paro_original = coef[1] * (std_tasa_paro / std_tasa_emancipacion)
+
+    ## Vemos los coeficientes desnormalizados.
+
+print(f"Coeficiente desnormalizado de precio_m2: {coef_precio_m2_original:.4f}")
+print(f"Coeficiente desnormalizado de tasa de paro: {coef_tasa_paro_original:.4f}")
+
+    ## Interpretación del modelo.
+
+print("\nInterpretación del modelo de regresión bayesiana:")
+print(f"Intercepto: {intercept:.2f}")
+print(f"Coeficiente de precio_m2: {coef_precio_m2_original:.4f} (Por cada incremento de 1 euro en el precio por metro cuadrado, la tasa de emancipación aumenta en aproximadamente 0.0249 puntos porcentuales.)")
+print(f"Coeficiente de tasa_paro: {coef_tasa_paro_original:.4f} (Por cada incremento de 1 punto porcentual en la tasa de paro, la tasa de emancipación disminuye en aproximadamente -1.8964 puntos porcentuales.)")
+
 """
-Resumen del modelo y métricas:
+MODELO DE REGRESIÓN BAYESIANA. MODELO QUE TIENE EN CUENTA LA INCERTIDUMBRE.
 
-    - MSE (Mean Squared Error): 4.7258
-    - El MSE es una medida del error cuadrático promedio entre las predicciones del modelo
-    y los valores reales. Un valor de 4.7258 sugiere que, en promedio, las predicciones del modelo
-    están a unos 4.73 puntos de distancia de los valores reales de la tasa de emancipación.
-    Un MSE más bajo indica un mejor rendimiento del modelo, ya que implica menores errores de predicción.
+- Intercepto: representa la tasa de emancipación promedio cuando las características (precio_m2 y tasa_paro)
+        están en sus valores medios. En este caso, es aproximadamente 50.49%.
+- Precio por m2: el coeficiente desnormalizado es 0.0249.
+        Esto significa que por cada incremento de 1 euro en el precio por metro cuadrado,
+        la tasa de emancipación aumenta en aproximadamente 0.0249 puntos porcentuales.
+        Indica una relación positiva entre el precio de la vivienda y la tasa de emancipación, aunque el efecto es pequeño.
+- Tasa de paro: el coeficiente es -1.8964. Esto significa que por cada incremento de 1 punto porcentual
+        en la tasa de paro, la tasa de emancipación disminuye en aproximadamente 1.8964 puntos porcentuales.
+        Indica una relación negativa entre el desempleo y la tasa de emancipación,
+        sugiriendo que un mayor desempleo reduce la tasa de emancipación.
 
-Coeficientes del modelo:
+ERROR CUADRÁTICO MEDIO (ECM o MSE).
 
-Para interpretar completamente el modelo, se deben revisar los coeficientes estimados por BayesianRidge.
-Aunque no tenemos estos coeficientes directamente en los resultados impresos, podemos inferir su impacto
-observando las características seleccionadas y los patrones en el gráfico.
-    - Intercepto (const):
-        · Indica el valor esperado de la tasa de emancipación cuando precio_m2 y tasa_paro son cero.
-        En el contexto de normalización, este valor puede ser interpretado como el valor base de la tasa de emancipación.
-    - precio_m2:
-        · En el modelo lineal anterior, el coeficiente de precio_m2 era positivo,
-        lo que indica que un aumento en el precio por metro cuadrado está asociado con un aumento en la tasa de emancipación.
-        Este patrón es consistente y sugiere que mayores precios de la vivienda pueden estar correlacionados con mayores tasas de emancipación, posiblemente porque áreas con mayores precios reflejan mejores oportunidades económicas.
-    - tasa_paro:
-        · En el modelo lineal anterior, el coeficiente de tasa_paro era negativo,
-        indicando que un aumento en la tasa de paro está asociado con una disminución en la tasa de emancipación.
-        Esto también es consistente con la intuición, ya que mayores tasas de desempleo pueden dificultar la
-        independencia económica de los individuos, reduciendo la tasa de emancipación.
+- El Error Cuadrático Medio es una medida para ver la precisión de las predicciones del modelo. Cuanto más bajo, mayor precisión.
+- El ECM de este modelo es 3.8829 en la validazión cruzada y de 4.1579 en el conjunto de prueba:
+las predicciones se acercan bastante a los valores reales.
+- El histograma de ECM muestra estos valores y su frecuencia en las 20.000 simulaciones hechas con validación cruzada.
 
-Visualización de los resultados:
-    - La línea azul representa los valores reales de la tasa de emancipación.
-    - La línea roja discontinua representa las predicciones del modelo.
-    - Observamos que las predicciones del modelo siguen bastante bien la tendencia de los valores reales,
-    aunque hay algunas discrepancias, especialmente en los picos y valles.
-    Estas discrepancias son normales y reflejan la variabilidad en los datos que el modelo no captura completamente.
+INTERVALOS DE CONFIANZA DEL MODELO.
 
-Observaciones:
+- Intercepto: 50.485218
+	•	Coeficiente: 50.485218
+	•	Representa la tasa de emancipación promedio cuando las características precio_m2 y tasa_paro están en sus valores medios.
+	•	Intervalo de Confianza: [49.472278, 51.498157]. Estamos un 95% seguros de que el valor verdadero del intercepto
+        está dentro de este rango.
 
-    - Precisión del Modelo:
-        · El modelo tiene un MSE relativamente bajo, lo que sugiere que realiza predicciones precisas
-        de la tasa de emancipación en función de las características precio_m2 y tasa_paro.
-    - Impacto de las Características:
-        · precio_m2 y tasa_paro tienen un impacto significativo en la tasa de emancipación, alineado con la intuición económica.
-        · A medida que aumenta el precio de la vivienda, la tasa de emancipación tiende a aumentar.
-        · A medida que aumenta la tasa de paro, la tasa de emancipación tiende a disminuir.
-    - Utilidad del Modelo:
-        · Este modelo puede ser útil para predecir la tasa de emancipación en diferentes escenarios económicos,
-        ayudando a los formuladores de políticas y a los planificadores urbanos a entender mejor los factores
-        que afectan la emancipación de los jóvenes.
-
-Conclusión:
-
-El modelo de regresión bayesiana proporciona una buena aproximación para predecir la tasa de emancipación
-basada en precio_m2 y tasa_paro. Los resultados son interpretables y coherentes con la teoría económica,
-lo que refuerza la validez del modelo. La visualización muestra que las predicciones están alineadas con los valores reales,
-aunque hay espacio para mejoras adicionales en la precisión del modelo.
+- precio_m2: 0.173302
+	•	Coeficiente: 0.173302
+	•	Por cada incremento de 1 euro en el precio por metro cuadrado, la tasa de emancipación aumenta
+        en aproximadamente 0.173 puntos porcentuales.
+	•	Intervalo de Confianza: [0.054661, 0.291943]. Estamos un 95% seguros de que el efecto verdadero
+        del precio por metro cuadrado en la tasa de emancipación está dentro de este rango.
+	•	El coeficiente positivo indica una relación positiva entre el precio de la vivienda y la tasa de emancipación.
+    
+- tasa_paro: -20.154752
+	•	Coeficiente: -20.154752
+	•	Por cada incremento de 1 punto porcentual en la tasa de paro, la tasa de emancipación disminuye en aproximadamente 20.15 puntos porcentuales.
+	•	Intervalo de Confianza: [-20.273484, -20.036019]. Estamos un 95% seguros de que el efecto verdadero
+        de la tasa de paro en la tasa de emancipación está dentro de este rango.
+	•	El coeficiente negativo indica una fuerte relación negativa entre el desempleo y la tasa de emancipación.
 """
 
-# MODELO DE REGRESIÓN LOGÍSTICA GENERALIZADA.
+# MODELO DE REGRESIÓN BAYESIANA CON CATEGORÍA.
 
-    ## Selección de características.
+ruta = "/Users/miguelrosgarcia/Desktop/Máster/Curso/TFM/Datasets/Definitivos/DATASET_FINAL.csv"
+data = pd.read_csv(ruta)
 
-selected_features = ["precio_m2", "tasa_paro"]
+# Convertir la variable "categoria" en variables dummy (one-hot encoding)
+data = pd.get_dummies(data, columns=["categoria"])
 
-    ## Filtrar el DataFrame para las características seleccionadas y la variable objetivo.
+# Seleccionar las características y la variable objetivo
+variables_independientes = ["precio_m2", "tasa_paro"] + [col for col in data.columns if "categoria_" in col]
+variable_dependiente = "tasa_emancipacion"
 
-x = data[selected_features].values
-y = data["tasa_emancipacion"].values
+x = data[variables_independientes].values
+y = data[variable_dependiente].values
 
-    ## Normalizar las características.
+# Normalizar los datos
+escalar = StandardScaler()
+x_scaled = escalar.fit_transform(x)
 
-scaler = StandardScaler()
-x_scaled = scaler.fit_transform(x)
+# Dividir los datos en entrenamiento y prueba (70% entrenamiento y 30% prueba)
+x_train, x_test, y_train, y_test = train_test_split(x_scaled, y, test_size=0.3, random_state=42)
 
-    ## Dividir los datos en entrenamiento y prueba.
+# Definir el modelo de regresión bayesiana
+model = BayesianRidge()
 
-x_train, x_test, y_train, y_test = train_test_split(x_scaled, y, test_size = 0.2, random_state = 42)
+# Validación cruzada con 20.000 simulaciones
+n_splits = 10  # Número de pliegues
+n_repeats = 20  # Número de repeticiones (10 pliegues x 2000 repeticiones = 20.000 simulaciones)
+rkf = RepeatedKFold(n_splits=n_splits, n_repeats=n_repeats, random_state=42)
+cv_scores = cross_val_score(model, x_scaled, y, cv=rkf, scoring="neg_mean_squared_error")
+cv_mse = -cv_scores.mean()
+cv_std = cv_scores.std()
+print(f"Cross-Validated MSE: {cv_mse:.4f} ± {cv_std:.4f}")
 
-    ## Añadir una columna de unos para el intercepto.
+# Entrenar el modelo con el conjunto de entrenamiento
+model.fit(x_train, y_train)
 
-x_train = sm.add_constant(x_train)
-x_test = sm.add_constant(x_test)
-
-    ## Ajustar el modelo de regresión logística.
-
-model = sm.GLM(y_train, x_train, family=sm.families.Gaussian()).fit()
-
-    ## Resumen de los resultados.
-
-summary = model.summary()
-print(summary)
-
-    ## Predicciones.
-
+# Hacer las predicciones sobre el conjunto de prueba
 y_pred = model.predict(x_test)
 
-    ## Calcular el MSE.
-
+# Calcular el MSE (Error Cuadrático Medio)
 mse = mean_squared_error(y_test, y_pred)
-print(f"MSE: {mse}")
+print(f"MSE: {mse:.4f}")
 
-"""
-Intercepto (const): 50.4939
-    - Este valor indica que cuando todas las características son cero, la tasa de emancipación promedio es aproximadamente 50.49.
-
-"precio_m2" (x1): 0.1530
-    - Un aumento en el precio por metro cuadrado está asociado
-    con un aumento en la tasa de emancipación. Este coeficiente es significativo con un valor p de 0.006,
-    indicando que hay una relación estadísticamente significativa entre el precio por metro cuadrado y la tasa de emancipación.
-
-"tasa_paro" (x2): -20.1984
-    - Un aumento en la tasa de paro está asociado con una disminución
-    en la tasa de emancipación. Este coeficiente es altamente significativo con un valor p menor que 0.0001,
-    indicando que hay una fuerte relación inversa entre la tasa de paro y la tasa de emancipación.
-"""
-
-    ## Quiero visualizar los resultados.
-
-        ### Hago las predicciones.
-
-y_pred = model.predict(x_test)
-
-        ### Creo un dataframe para comparar las predicciones con los valores reales.
-
-results = pd.DataFrame({
+# Hacer un dataframe para comparar las predicciones con los valores reales
+resultados = pd.DataFrame({
     "Real": y_test,
     "Predicción": y_pred
 })
 
-        ### Visualizo las predicciones con los valores reales.
+# Extraer los coeficientes y el intercepto del modelo
+intercept = model.intercept_
+coef = model.coef_
 
-plt.figure(figsize = (12, 6))
-plt.plot(results["Real"].values, label = "Valores reales", color = "black")
-plt.plot(results["Predicción"].values, label = "Predicciones", color = "red", linestyle = "dashed")
+# Obtener la matriz de covarianza de los coeficientes
+cov_matrix = model.sigma_
+
+# Calcular las desviaciones estándar de los coeficientes
+intercept_std = np.sqrt(model.alpha_)  # Desviación estándar del intercepto
+coef_std = np.sqrt(np.diag(cov_matrix))  # Desviaciones estándar de los coeficientes
+
+# Hacer un dataframe para los intervalos de confianza del modelo
+intervalos_confianza = pd.DataFrame({
+    "Características": ["Intercept"] + variables_independientes,
+    "Coeficiente": [intercept] + list(coef),
+    "Límite Inferior": [intercept - 1.96 * intercept_std] + list(coef - 1.96 * coef_std),
+    "Límite Superior": [intercept + 1.96 * intercept_std] + list(coef + 1.96 * coef_std)
+})
+
+# Vemos el resumen del modelo con intervalos de confianza
+print("Resumen del modelo de regresión bayesiana:")
+print(intervalos_confianza)
+
+# Visualizar las distribuciones de probabilidad de los coeficientes
+x_vals = np.linspace(-30, 30, 400)
+colors = ["blue", "green", "red", "purple", "orange", "cyan", "magenta"]
+
+plt.figure(figsize=(12, 6))
+for i, feature in enumerate(["Intercept"] + variables_independientes):
+    mean = intervalos_confianza["Coeficiente"].iloc[i]
+    std = intercept_std if i == 0 else coef_std[i - 1]
+    plt.plot(x_vals, stats.norm.pdf(x_vals, mean, std), label=feature, color=colors[i % len(colors)])
 plt.legend()
-plt.title("Regresión logística. Comparación de valores reales y predicciones")
+plt.title("Distribuciones de probabilidad de los coeficientes del modelo de regresión bayesiana")
+plt.xlabel("Valor del Coeficiente")
+plt.ylabel("Densidad de Probabilidad")
+plt.show()
+
+# Visualizar las predicciones vs los valores reales
+plt.figure(figsize=(12, 6))
+plt.plot(resultados["Real"].values, label="Valores reales", color="blue")
+plt.plot(resultados["Predicción"].values, label="Predicciones", color="red", linestyle="dashed")
+plt.legend()
+plt.title("Regresión bayesiana: comparación de valores reales y predicciones")
 plt.xlabel("Índice")
 plt.ylabel("Tasa de emancipación")
 plt.show()
 
+# Histograma de los errores cuadráticos medios de la validación cruzada
+plt.figure(figsize=(12, 6))
+plt.hist(-cv_scores, bins=30, edgecolor="black", alpha=0.7, color="turquoise")
+plt.title("Distribución de los Errores Cuadráticos Medios en la validación cruzada")
+plt.xlabel("Error Cuadrático Medio")
+plt.ylabel("Frecuencia")
+plt.show()
+
+# Desnormalizar los coeficientes para interpretarlos en la escala original
+std_precio_m2 = data["precio_m2"].std()
+std_tasa_paro = data["tasa_paro"].std()
+std_tasa_emancipacion = data["tasa_emancipacion"].std()
+
+coef_precio_m2_original = coef[0] * (std_precio_m2 / std_tasa_emancipacion)
+coef_tasa_paro_original = coef[1] * (std_tasa_paro / std_tasa_emancipacion)
+
+# Vemos los coeficientes desnormalizados
+print(f"Coeficiente desnormalizado de precio_m2: {coef_precio_m2_original:.4f}")
+print(f"Coeficiente desnormalizado de tasa de paro: {coef_tasa_paro_original:.4f}")
+
+# Interpretación del modelo
+print("\nInterpretación del modelo de regresión bayesiana:")
+print(f"Intercepto: {intercept:.2f}")
+print(f"Coeficiente de precio_m2: {coef_precio_m2_original:.4f} (Por cada incremento de 1 euro en el precio por metro cuadrado, la tasa de emancipación aumenta en aproximadamente {coef_precio_m2_original:.4f} puntos porcentuales.)")
+print(f"Coeficiente de tasa_paro: {coef_tasa_paro_original:.4f} (Por cada incremento de 1 punto porcentual en la tasa de paro, la tasa de emancipación disminuye en aproximadamente {coef_tasa_paro_original:.4f} puntos porcentuales.)")
+
 """
-Evaluación del modelo:
+Coeficiente desnormalizado de precio_m2: -0.1301
+Coeficiente desnormalizado de tasa de paro: -1.9024
 
-	•	MSE (Mean Squared Error): 4.7259
-	•	El MSE es una medida del error promedio cuadrático entre las predicciones del modelo y los valores reales.
-        Un valor menor indica que las predicciones están más cerca de los valores reales.
+Intercepto: 50.49
+Coeficiente de precio_m2: -0.1301 (Por cada incremento de 1 euro en el precio por metro cuadrado,
+    la tasa de emancipación aumenta en aproximadamente -0.1301 puntos porcentuales.)
+Coeficiente de tasa_paro: -1.9024 (Por cada incremento de 1 punto porcentual en la tasa de paro,
+    la tasa de emancipación disminuye en aproximadamente -1.9024 puntos porcentuales.)
 
-Predicciones y visualización:
+Al meter la variable "categoria" el coeficiente de "precio_m2" se vuelve negativo.
+Esto puede ser por un problema de multicolinealidad y que "categoría" capture parte de la variabilidad explicada por "precio_m2".
+"""
 
-He realizado predicciones utilizando el conjunto de prueba y visualizado los resultados
-comparando las predicciones con los valores reales. El gráfico muestra que el modelo sigue
-bastante bien los patrones de los datos reales, aunque hay algunas discrepancias normales en cualquier modelo de predicción.
+# VER LA CORRELACIÓN ENTRE VARIABLES
 
-Conclusión:
+# Analizar la correlación entre precio_m2 y las variables categóricas
+data_without_fecha = data.drop(columns=["fecha", "distrito"])
+correlations = data_without_fecha.corr()
 
-El modelo de regresión lineal ajustado proporciona una buena aproximación para predecir la tasa de emancipación
-basada en precio_m2 y tasa_paro. Aunque no es una regresión bayesiana verdadera, los resultados son interpretables
-y útiles para entender cómo estas características afectan la tasa de emancipación.
+# Seleccionar las variables de interés
+corr_precio_m2 = correlations["precio_m2"]
+corr_tasa_emancipacion = correlations["tasa_emancipacion"]
+
+# Filtrar las correlaciones con las variables categóricas
+corr_precio_m2_categorias = corr_precio_m2.filter(like='categoria_')
+corr_tasa_emancipacion_categorias = corr_tasa_emancipacion.filter(like='categoria_')
+
+# Combinar las correlaciones en un solo DataFrame para su visualización
+corr_combined = pd.DataFrame({
+    "Correlación con precio_m2": corr_precio_m2_categorias,
+    "Correlación con tasa_emancipacion": corr_tasa_emancipacion_categorias
+})
+
+corr_combined
+
+"""
+	                         Correlación con precio_m2       Correlación con tasa_emancipacion
+categoria_Alto	             0.776533                        0.458321
+categoria_Bajo	             -0.631451	                     -0.616080
+categoria_Medio	             -0.079921	                     0.091538
+categoria_Medio-Alto	     0.226996	                     0.231048
+categoria_Medio-Bajo	    -0.282460	                     -0.156412
+
+Las áreas categorizadas como “Alto” tienden a tener un precio por metro cuadrado más alto.
+Las áreas “Bajo” tienen precios por metro cuadrado más bajos.
+Las áreas “Alto” tienden a tener tasas de emancipación más altas.
+Las áreas “Bajo” tienden a tener tasas de emancipación más bajas.
+"""
+
+"""
+	1.	Categoria Alto: La tasa de emancipación en la categoría “Alto” es, en promedio, 0.72 puntos porcentuales mayor
+        que en la categoría de referencia. Sin embargo, debido a la variabilidad en los datos, este resultado no es concluyente y no podemos estar seguros de que esta diferencia sea significativa.
+	2.	Categoria Bajo: En la categoría “Bajo”, la tasa de emancipación es, en promedio, 0.39 puntos porcentuales menor
+        que en la categoría de referencia. Al igual que con la categoría “Alto”, esta diferencia no es estadísticamente significativa, lo que significa que no podemos afirmar con certeza que exista una verdadera diferencia.
+	3.	Categoria Medio: La categoría “Medio” muestra una tasa de emancipación casi igual a la de la categoría de referencia,
+        con una diferencia insignificante de solo -0.07 puntos porcentuales. Esta diferencia tampoco es estadísticamente significativa.
+	4.	Categoria Medio-Alto: En la categoría “Medio-Alto”, la tasa de emancipación es, en promedio, 0.31 puntos porcentuales mayor
+        que en la categoría de referencia. No obstante, esta diferencia no es significativa desde el punto de vista estadístico, lo que indica que podría ser debida al azar.
+	5.	Categoria Medio-Bajo: La categoría “Medio-Bajo” tiene una tasa de emancipación 0.56 puntos porcentuales menor
+        que la categoría de referencia. Sin embargo, al igual que las otras categorías,
+        esta diferencia no es estadísticamente significativa.
 """
