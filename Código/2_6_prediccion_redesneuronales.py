@@ -1,147 +1,135 @@
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+import matplotlib.pyplot as plt
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 
-"""
-Long Short-Term Memory (LSTM) o Memoria a Largo-Corto Plazo es un tipo de red neuronal recurrente (RNN).
-Está diseñada para aprender dependencias a largo plazo en secuencias de datos.
-
-Se usa para trabajar con datos que vienen en sucuencias. Puede recodar información durante un largo periodo de tiempo.
-
-LSTM es una técnica de IA que se utiliza para analizar y hacer predicciones basadas en datos
-que cambian con el tiempo, como los precios de las viviendas.
-
-Este modelo es especialmente bueno para recordar información importante durante largos periodos de tiempo.
-"""
-
-"""
-Este modelo se usa para predecir el precio de las viviendas en el futuro basado en datos históricos
-como el precio anterior, la tasa de paro (desempleo) y una categoría descriptiva.
-"""
-
+# Cargar el archivo
 ruta = "/Users/miguelrosgarcia/Desktop/Máster/Curso/TFM/Datasets/Definitivos/DATASET_FINAL.csv"
 data = pd.read_csv(ruta)
 
-# PREPARACIÓN DE LOS DATOS.
-
-    ## Convierto la columna de fecha a datetime.
-
+# Convertir la columna de fecha a datetime
 data['fecha'] = pd.to_datetime(data['fecha'], format='%m-%Y')
 
-    ## Ordeno los datos por fecha.
-
+# Ordenar los datos por fecha
 data = data.sort_values('fecha')
 
-    ## Seleccionp las columnas relevantes.
-
-features = ['precio_m2', 'tasa_paro', 'categoria']
+# Seleccionar las columnas relevantes incluyendo la tasa de emancipacion
+features = ['precio_m2', 'tasa_paro', 'categoria', 'tasa_emancipacion']
 data_selected = data[features]
 
-    ## Convierto la columna 'categoria' en variables dummy.
-
+# Convertir la columna 'categoria' en variables dummy
 data_selected = pd.get_dummies(data_selected, columns=['categoria'], drop_first=True)
 
-    ## Normalizo los datos (excluyendo las columnas dummy generadas).
-
+# Normalizar los datos (excluyendo las columnas dummy generadas)
 scaler = MinMaxScaler()
 data_scaled = scaler.fit_transform(data_selected)
 
-    ## Convierto de nuevo a DataFrame.
-
+# Convertir de nuevo a DataFrame
 data_scaled = pd.DataFrame(data_scaled, columns=data_selected.columns)
 
-# CREAR SECUENCIAS DE DATOS.
-
-    ## Creo secuencias de entrada y salida.
-
-def create_sequences(data, seq_length):
+# Crear secuencias de datos
+def create_sequences(data, seq_length, target_col):
     x = []
     y = []
     for i in range(seq_length, len(data)):
         x.append(data.iloc[i-seq_length:i].values)
-        y.append(data.iloc[i, 0])
+        y.append(data.iloc[i, data.columns.get_loc(target_col)])  # Predicción de la variable objetivo
     return np.array(x), np.array(y)
 
-SEQ_LENGTH = 120  # Usaremos 120 meses de historial para predecir
-x, y = create_sequences(data_scaled, SEQ_LENGTH)
+SEQ_LENGTH = 400  # Usaremos 400 registros de historial para predecir
+x, y = create_sequences(data_scaled, SEQ_LENGTH, 'tasa_emancipacion')
 
-# DIVISIÓN DE LOS DATOS.
+# Dividir los datos en conjuntos de entrenamiento y prueba
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3, random_state=42)
 
-    ## Divido los datos en conjuntos de entrenamiento y prueba.
-
-from sklearn.model_selection import train_test_split
-x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
-
-# DEFINO EL MODELO LSTM UTILIZANDO KERAS.
-
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
-
+# Definir el modelo LSTM utilizando Keras
 model = Sequential()
 model.add(LSTM(units=50, return_sequences=True, input_shape=(SEQ_LENGTH, x_train.shape[2])))
-model.add(Dropout(0.2))
+model.add(Dropout(0.5))
 model.add(LSTM(units=50))
-model.add(Dropout(0.2))
+model.add(Dropout(0.5))
 model.add(Dense(1))
 
-"""
-Aquí he creado un modelo con dos capas LSTM con 50 unidades cada una, y capas de dropout para evitar el sobreajuste.
-La última capa es una capa densa que produce la predicción final.
-"""
-
+# Compilar el modelo
 model.compile(optimizer='adam', loss='mean_squared_error')
 model.summary()
 
-# ENTRENAMIENTO DEL MODELO.
-
+# Entrenar el modelo
 history = model.fit(x_train, y_train, epochs=50, batch_size=32, validation_split=0.2)
 
-"""
-Entrena el modelo con los datos de entrenamiento durante 50 ciclos (épocas)
-para que pueda aprender los patrones en los datos.
-"""
-
-# EVALUACIÓN DEL MODELO.
-
+# Evaluación del modelo
 loss = model.evaluate(x_test, y_test)
 print(f'Loss: {loss}')
 
-"""
-Prueba el modelo con los datos de prueba para ver cuán bien predice los precios.
-Imprime el valor de pérdida, que indica la precisión del modelo: un valor más bajo significa mejor precisión.
-"""
-
-# PREDICCIONES DEL MODELO.
-
+# Predicciones del modelo
 y_pred = model.predict(x_test)
 
-"""
-Usa el modelo para predecir los precios en el conjunto de prueba.
-"""
+# Desnormalización de las predicciones
+scaler_tasa = MinMaxScaler()
+scaler_tasa.fit(data[['tasa_emancipacion']])
 
-# DESNORMALIZACIÓN DE LAS PREDICCIONES.
+y_test_scaled = scaler_tasa.inverse_transform(y_test.reshape(-1, 1)).flatten()
+y_pred_scaled = scaler_tasa.inverse_transform(y_pred).flatten()
 
-y_test_scaled = scaler.inverse_transform(np.concatenate((y_test.reshape(-1, 1), np.zeros((y_test.shape[0], data_selected.shape[1]-1))), axis=1))[:, 0]
-y_pred_scaled = scaler.inverse_transform(np.concatenate((y_pred, np.zeros((y_pred.shape[0], data_selected.shape[1]-1))), axis=1))[:, 0]
+# Calcular RMSE y MAE
+rmse = np.sqrt(mean_squared_error(y_test_scaled, y_pred_scaled))
+mae = mean_absolute_error(y_test_scaled, y_pred_scaled)
 
-"""
-Convierte las predicciones y los valores reales de vuelta a su escala original para que sean comprensibles.
-"""
+print(f'RMSE: {rmse}')
+print(f'MAE: {mae}')
 
-# VISUALIZACIÓN DE RESULTADOS.
-
-import matplotlib.pyplot as plt
-
+# Visualización de resultados
 plt.figure(figsize=(10, 6))
-plt.plot(y_test_scaled, color='blue', label='Precios reales')
+plt.plot(y_test_scaled, color='blue', label='Tasa de Emancipación Real')
 plt.plot(y_pred_scaled, color='red', label='Predicciones')
-plt.title('Precios reales vs Precios predichos')
+plt.title('Tasa de Emancipación Real vs Predicciones')
 plt.xlabel('Tiempo')
-plt.ylabel('Precio')
+plt.ylabel('Tasa de Emancipación')
 plt.legend()
 plt.show()
 
-"""
-Loss: 0.021775271743535995
-"""
+# Función de predicción con nuevos datos
+def predecir_tasa_emancipacion(nuevo_precio_m2, nueva_tasa_paro, nueva_categoria):
+    nuevos_datos = {
+        'precio_m2': [nuevo_precio_m2],
+        'tasa_paro': [nueva_tasa_paro],
+        'tasa_emancipacion': [0]  # Placeholder for normalization
+    }
+    
+    nuevas_categorias = pd.DataFrame({'categoria': [nueva_categoria]})
+    nuevas_categorias = pd.get_dummies(nuevas_categorias, columns=['categoria'])
+
+    # Asegurar que las nuevas categorías tienen las mismas columnas que las de entrenamiento
+    categorias_entrenamiento = [col for col in data_selected.columns if 'categoria_' in col]
+    for col in categorias_entrenamiento:
+        if col not in nuevas_categorias.columns:
+            nuevas_categorias[col] = 0
+    nuevas_categorias = nuevas_categorias[categorias_entrenamiento]
+
+    nuevos_datos = pd.concat([pd.DataFrame(nuevos_datos), nuevas_categorias], axis=1)
+
+    # Normalizar los nuevos datos utilizando el mismo scaler
+    nuevos_datos_scaled = scaler.transform(nuevos_datos)
+
+    # Obtener las últimas (SEQ_LENGTH-1) filas de los datos de entrenamiento para formar la secuencia
+    ultima_secuencia = data_scaled.iloc[-(SEQ_LENGTH-1):].values
+    nueva_secuencia = np.vstack([ultima_secuencia, nuevos_datos_scaled])
+
+    nueva_secuencia = nueva_secuencia.reshape((1, SEQ_LENGTH, nueva_secuencia.shape[1]))
+    nueva_prediccion = model.predict(nueva_secuencia)
+
+    nueva_prediccion_desnormalizada = scaler_tasa.inverse_transform(nueva_prediccion).flatten()
+
+    return nueva_prediccion_desnormalizada[0]
+
+# Ejemplo de uso de la función de predicción
+nuevo_precio_m2 = 14.7
+nueva_tasa_paro = 4.27
+nueva_categoria = 'categoria_Medio-Alto'
+
+prediccion = predecir_tasa_emancipacion(nuevo_precio_m2, nueva_tasa_paro, nueva_categoria)
+print(f'Predicción de la tasa de emancipación para precio_m2={nuevo_precio_m2}, tasa_paro={nueva_tasa_paro} y categoria={nueva_categoria}: {prediccion:.4f}')

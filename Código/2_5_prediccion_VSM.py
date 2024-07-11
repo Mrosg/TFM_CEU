@@ -5,7 +5,9 @@ from sklearn.preprocessing import OneHotEncoder
 from sklearn.metrics import mean_squared_error, r2_score
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, KFold
+import numpy as np
+from sklearn.linear_model import Ridge
 
 """
 SVM. Support Vector Machine.
@@ -25,7 +27,6 @@ dataset = pd.read_csv(ruta)
 # SUPPORT VECTOR MACHINE.
 
 # One-hot encoding de la columna 'categoria'
-# Esto convierte la variable categórica en variables dummy (binarias)
 encoder = OneHotEncoder(sparse_output=False)
 categoria_encoded = encoder.fit_transform(dataset[['categoria']])
 
@@ -33,23 +34,42 @@ categoria_encoded = encoder.fit_transform(dataset[['categoria']])
 categoria_df = pd.DataFrame(categoria_encoded, columns=encoder.get_feature_names_out(['categoria']))
 data = pd.concat([dataset, categoria_df], axis=1)
 
-# Calcular la 'tasa_paro' como el porcentaje de 'paro_total' sobre 'poblacion'
-data['tasa_paro'] = (data['paro_total'] / data['poblacion']) * 100
-
 # Seleccionar las columnas relevantes para el modelo
 # Variables independientes
-features = ['precio_m2', 'tasa_paro'] + list(categoria_df.columns)
+features = ["precio_m2", "tasa_paro"] + [col for col in data.columns if "categoria_" in col]
 # Variable dependiente (target)
 target = 'tasa_emancipacion'
 
 # Dividir los datos en conjuntos de entrenamiento y prueba
 X = data[features]
 y = data[target]
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
-# Entrenar el modelo de regresión SVM
-# Usamos el kernel radial basis function (RBF)
+# Crear la validación cruzada
+def cross_validation(model, X, y, num_folds, num_simulations):
+    mse_scores = []
+    r2_scores = []
+    
+    for i in range(num_simulations):
+        kf = KFold(n_splits=num_folds, shuffle=True, random_state=i)
+        mse = -cross_val_score(model, X, y, cv=kf, scoring='neg_mean_squared_error')
+        r2 = cross_val_score(model, X, y, cv=kf, scoring='r2')
+        mse_scores.extend(mse)
+        r2_scores.extend(r2)
+    
+    return np.mean(mse_scores), np.mean(r2_scores)
+
+# Número de pliegues y simulaciones
+num_folds = 10
+num_simulations = 5
+
+# Modelo SVM
 svm_regressor = SVR(kernel='rbf')
+
+# Realizar la validación cruzada
+mean_mse, mean_r2 = cross_validation(svm_regressor, X_train, y_train, num_folds, num_simulations)
+
+# Entrenar el modelo de regresión SVM con todos los datos de entrenamiento
 svm_regressor.fit(X_train, y_train)
 
 # Realizar predicciones con el conjunto de entrenamiento y prueba
@@ -67,6 +87,8 @@ print("Error Cuadrático Medio en Entrenamiento:", train_mse)
 print("Error Cuadrático Medio en Prueba:", test_mse)
 print("R² en Entrenamiento:", train_r2)
 print("R² en Prueba:", test_r2)
+print(f"Validación Cruzada - MSE Promedio: {mean_mse}")
+print(f"Validación Cruzada - R² Promedio: {mean_r2}")
 
 # Crear un gráfico de dispersión para comparar los valores reales vs predichos en el conjunto de prueba
 plt.figure(figsize=(10, 6))
@@ -120,17 +142,6 @@ plt.show()
     la tasa de paro disminuye significativamente la tasa de emancipación.
 """
 
-# VALIDACIÓN CRUZADA.
-
-# Validación cruzada con 5 particiones (5-fold cross-validation)
-cv_scores = cross_val_score(svm_regressor, X, y, cv=5, scoring='neg_mean_squared_error')
-
-# Calcular el MSE promedio y su desviación estándar
-cv_mse_mean = -cv_scores.mean()
-cv_mse_std = cv_scores.std()
-
-(cv_mse_mean, cv_mse_std)
-
 """
 ECM promedio: 1.5940053257335962
 Desviación estándar del ECM: 1.4036550845564528
@@ -160,3 +171,82 @@ plt.show()
 """
 La visibilidad de un patrón puede suponer un problema de multicolinealidad.
 """
+
+# Crear el modelo de Regresión Ridge
+ridge_regressor = Ridge(alpha=1.0)  # Puedes ajustar el parámetro alpha según sea necesario
+
+# Realizar la validación cruzada
+def cross_validation(model, X, y, num_folds, num_simulations):
+    from sklearn.model_selection import KFold, cross_val_score
+    import numpy as np
+    mse_scores = []
+    r2_scores = []
+    
+    for i in range(num_simulations):
+        kf = KFold(n_splits=num_folds, shuffle=True, random_state=i)
+        mse = -cross_val_score(model, X, y, cv=kf, scoring='neg_mean_squared_error')
+        r2 = cross_val_score(model, X, y, cv=kf, scoring='r2')
+        mse_scores.extend(mse)
+        r2_scores.extend(r2)
+    
+    return np.mean(mse_scores), np.mean(r2_scores)
+
+num_folds = 10
+num_simulations = 5
+
+mean_mse_ridge, mean_r2_ridge = cross_validation(ridge_regressor, X_train, y_train, num_folds, num_simulations)
+
+# Entrenar el modelo de Regresión Ridge con todos los datos de entrenamiento
+ridge_regressor.fit(X_train, y_train)
+
+# Realizar predicciones con el conjunto de entrenamiento y prueba
+y_pred_train_ridge = ridge_regressor.predict(X_train)
+y_pred_test_ridge = ridge_regressor.predict(X_test)
+
+# Evaluar el modelo usando el Error Cuadrático Medio (MSE) y el Coeficiente de Determinación (R²)
+train_mse_ridge = mean_squared_error(y_train, y_pred_train_ridge)
+test_mse_ridge = mean_squared_error(y_test, y_pred_test_ridge)
+train_r2_ridge = r2_score(y_train, y_pred_train_ridge)
+test_r2_ridge = r2_score(y_test, y_pred_test_ridge)
+
+# Mostrar los resultados de la evaluación del modelo Ridge
+evaluation_results_ridge = {
+    "Error Cuadrático Medio en Entrenamiento": train_mse_ridge,
+    "Error Cuadrático Medio en Prueba": test_mse_ridge,
+    "R² en Entrenamiento": train_r2_ridge,
+    "R² en Prueba": test_r2_ridge,
+    "Validación Cruzada - MSE Promedio": mean_mse_ridge,
+    "Validación Cruzada - R² Promedio": mean_r2_ridge
+}
+
+print(evaluation_results_ridge)
+
+# Análisis de Importancia de Variables en Ridge
+coefficients_ridge = ridge_regressor.coef_
+importance_df_ridge = pd.DataFrame({'Variable': features, 'Importancia': coefficients_ridge})
+
+# Visualizar la importancia de las variables
+importance_df_ridge = importance_df_ridge.sort_values(by='Importancia', ascending=False)
+
+plt.figure(figsize=(12, 8))
+plt.barh(importance_df_ridge['Variable'], importance_df_ridge['Importancia'], color='skyblue')
+plt.xlabel('Impacto')
+plt.title('Impacto de las variables en la predicción de Tasa de Emancipación (Ridge)')
+plt.gca().invert_yaxis()  # Invertir el eje y para que la variable más importante esté en la parte superior
+plt.grid(True)
+plt.show()
+
+# Análisis de Residuos para Ridge
+
+# Calcular los residuos (errores) en el conjunto de prueba
+residuos_ridge = y_test - y_pred_test_ridge
+
+# Crear un gráfico de residuos para Ridge
+plt.figure(figsize=(10, 6))
+plt.scatter(y_pred_test_ridge, residuos_ridge, color='blue', edgecolor='k', alpha=0.6)
+plt.axhline(y=0, color='red', linestyle='--', lw=2)
+plt.xlabel('Valores Predichos')
+plt.ylabel('Residuos')
+plt.title('Gráfico de Residuos (Ridge)')
+plt.grid(True)
+plt.show()

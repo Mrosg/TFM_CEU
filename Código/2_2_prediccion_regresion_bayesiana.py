@@ -24,7 +24,7 @@ variable_dependiente = "tasa_emancipacion"
 x = data[variables_independientes].values
 y = data[variable_dependiente].values
 
-    ## Normalizo mis datos.
+    ## Escalo mis datos.
 
 escalar = StandardScaler()
 x_scaled = escalar.fit_transform(x)
@@ -37,15 +37,15 @@ x_train, x_test, y_train, y_test = train_test_split(x_scaled, y, test_size = 0.3
 
 model = BayesianRidge()
 
-    ## Hago una validación cruzada con 20.000 simulaciones.
+    ## Hago una validación cruzada con 5.000 simulaciones.
 
 n_splits = 10  # Número de pliegues
-n_repeats = 2000  # Número de repeticiones (10 pliegues x 2000 repeticiones = 20.000 simulaciones)
+n_repeats = 500  # Número de repeticiones (10 pliegues x 500 repeticiones = 5.000 simulaciones)
 rkf = RepeatedKFold(n_splits = n_splits, n_repeats = n_repeats, random_state = 42)
 cv_scores = cross_val_score(model, x_scaled, y, cv = rkf, scoring = "neg_mean_squared_error")
 cv_mse = -cv_scores.mean()
 cv_std = cv_scores.std()
-print(f"Cross-Validated MSE: {cv_mse:.4f} ± {cv_std:.4f}")
+print(f"ECM de la validación cruzada: {cv_mse:.4f} ± {cv_std:.4f}")
 
     ## Entreno el modelo con el conjunto de entrenamiento.
 
@@ -58,7 +58,7 @@ y_pred = model.predict(x_test)
     ## Calculo el MSE (Error Cuadrático Medio).
 
 mse = mean_squared_error(y_test, y_pred)
-print(f"MSE: {mse:.4f}")
+print(f"ECM: {mse:.4f}")
 
     ## Hago un dataframe para comparar las predicciones con los valores reales.
 
@@ -83,7 +83,7 @@ coef_std = np.sqrt(np.diag(cov_matrix))  # Desviaciones estándar de los coefici
 
     ## Hago un dataframe para los intervalos de confianza del modelo.
 
-intervalos_confianza = pd.DataFrame({
+intervalos_confianza1 = pd.DataFrame({
     "Características": ["Intercept"] + variables_independientes,
     "Coeficiente": [intercept] + list(coef),
     "Límite Inferior": [intercept - 1.96 * intercept_std] + list(coef - 1.96 * coef_std),
@@ -93,7 +93,7 @@ intervalos_confianza = pd.DataFrame({
     ## Vemos el resumen del modelo con intervalos de confianza.
 
 print("Resumen del modelo de regresión bayesiana:")
-print(intervalos_confianza)
+print(intervalos_confianza1)
 
     ## Visualizo las distribuciones de probabilidad de los coeficientes.
 
@@ -103,14 +103,14 @@ colors = ["blue", "green", "red"]
 plt.figure(figsize = (12, 6))
 
 for i, feature in enumerate(["Intercept"] + variables_independientes):
-    mean = intervalos_confianza["Coeficiente"].iloc[i]
+    mean = intervalos_confianza1["Coeficiente"].iloc[i]
     std = intercept_std if i == 0 else coef_std[i - 1]
     plt.plot(x_vals, stats.norm.pdf(x_vals, mean, std), label = feature, color = colors[i % len(colors)])
     
 plt.legend()
 plt.title("Distribuciones de probabilidad de los coeficientes del modelo de regresión bayesiana")
-plt.xlabel("Valor del Coeficiente")
-plt.ylabel("Densidad de Probabilidad")
+plt.xlabel("Valor del coeficiente")
+plt.ylabel("Densidad de probabilidad")
 plt.show()
 
     ## Visualizo las predicciones vs los valores reales.
@@ -153,6 +153,24 @@ print("\nInterpretación del modelo de regresión bayesiana:")
 print(f"Intercepto: {intercept:.2f}")
 print(f"Coeficiente de precio_m2: {coef_precio_m2_original:.4f} (Por cada incremento de 1 euro en el precio por metro cuadrado, la tasa de emancipación aumenta en aproximadamente 0.0249 puntos porcentuales.)")
 print(f"Coeficiente de tasa_paro: {coef_tasa_paro_original:.4f} (Por cada incremento de 1 punto porcentual en la tasa de paro, la tasa de emancipación disminuye en aproximadamente -1.8964 puntos porcentuales.)")
+
+    ## Simulaciones para hacer predicciones con nuevos datos.
+
+def predecir_tasa_emancipacion(nuevo_precio_m2_1, nueva_tasa_paro_1):
+        ### Crear el array con los nuevos datos.
+    nuevo_dato = np.array([[nuevo_precio_m2_1, nueva_tasa_paro_1]])
+        ### Normalizar el nuevo array utilizando el mismo StandardScaler.
+    nuevo_dato_normalizado = escalar.transform(nuevo_dato)
+        ### Hacer la predicción.
+    nueva_prediccion = model.predict(nuevo_dato_normalizado)
+    return nueva_prediccion[0]
+
+        ### Ejemplo de uso de la función de predicción
+nuevo_precio_m2_1 = 14.7 
+nueva_tasa_paro_1 = 4.27 
+
+prediccion_1 = predecir_tasa_emancipacion(nuevo_precio_m2_1, nueva_tasa_paro_1)
+print(f"Predicción de la tasa de emancipación para precio_m2 = {nuevo_precio_m2_1} y tasa_paro = {nueva_tasa_paro_1} con una regresión bayesiana: {prediccion_1:.4f}")
 
 """
 MODELO DE REGRESIÓN BAYESIANA. MODELO QUE TIENE EN CUENTA LA INCERTIDUMBRE.
@@ -224,9 +242,9 @@ x_train, x_test, y_train, y_test = train_test_split(x_scaled, y, test_size=0.3, 
 # Definir el modelo de regresión bayesiana
 model = BayesianRidge()
 
-# Validación cruzada con 20.000 simulaciones
+# Validación cruzada con 5.000 simulaciones
 n_splits = 10  # Número de pliegues
-n_repeats = 20  # Número de repeticiones (10 pliegues x 2000 repeticiones = 20.000 simulaciones)
+n_repeats = 500  # Número de repeticiones (10 pliegues x 500 repeticiones = 5.000 simulaciones)
 rkf = RepeatedKFold(n_splits=n_splits, n_repeats=n_repeats, random_state=42)
 cv_scores = cross_val_score(model, x_scaled, y, cv=rkf, scoring="neg_mean_squared_error")
 cv_mse = -cv_scores.mean()
@@ -323,6 +341,28 @@ print(f"Intercepto: {intercept:.2f}")
 print(f"Coeficiente de precio_m2: {coef_precio_m2_original:.4f} (Por cada incremento de 1 euro en el precio por metro cuadrado, la tasa de emancipación aumenta en aproximadamente {coef_precio_m2_original:.4f} puntos porcentuales.)")
 print(f"Coeficiente de tasa_paro: {coef_tasa_paro_original:.4f} (Por cada incremento de 1 punto porcentual en la tasa de paro, la tasa de emancipación disminuye en aproximadamente {coef_tasa_paro_original:.4f} puntos porcentuales.)")
 
+# Simulaciones para hacer predicciones con nuevos datos
+def predecir_tasa_emancipacion(nuevo_precio_m2_2, nueva_tasa_paro_2, nueva_categoria_2):
+    # Crear el array con los nuevos datos
+    nueva_categoria_dummies = [1 if f"categoria_{nueva_categoria_2}" in col else 0 for col in variables_independientes[2:]]
+    nuevo_dato = np.array([[nuevo_precio_m2_2, nueva_tasa_paro_2] + nueva_categoria_dummies])
+    
+    # Normalizar el nuevo array utilizando el mismo StandardScaler
+    nuevo_dato_normalizado = escalar.transform(nuevo_dato)
+    
+    # Hacer la predicción
+    nueva_prediccion = model.predict(nuevo_dato_normalizado)
+    
+    return nueva_prediccion[0]
+
+# Ejemplo de uso de la función de predicción
+nuevo_precio_m2_2 = 14.7  # Ejemplo de nuevo valor para precio por metro cuadrado
+nueva_tasa_paro_2 = 4.27  # Ejemplo de nuevo valor para tasa de paro
+nueva_categoria_2 = 'Medio-Alto'  # Ejemplo de nueva categoría
+
+prediccion_2 = predecir_tasa_emancipacion(nuevo_precio_m2_2, nueva_tasa_paro_2, nueva_categoria_2)
+print(f"Predicción de la tasa de emancipación para precio_m2 = {nuevo_precio_m2_2}, tasa_paro = {nueva_tasa_paro_2} y categoria = {nueva_categoria_2} con una regresión bayesiana: {prediccion_2:.4f}")
+
 """
 Coeficiente desnormalizado de precio_m2: -0.1301
 Coeficiente desnormalizado de tasa de paro: -1.9024
@@ -371,9 +411,7 @@ Las áreas categorizadas como “Alto” tienden a tener un precio por metro cua
 Las áreas “Bajo” tienen precios por metro cuadrado más bajos.
 Las áreas “Alto” tienden a tener tasas de emancipación más altas.
 Las áreas “Bajo” tienden a tener tasas de emancipación más bajas.
-"""
 
-"""
 	1.	Categoria Alto: La tasa de emancipación en la categoría “Alto” es, en promedio, 0.72 puntos porcentuales mayor
         que en la categoría de referencia. Sin embargo, debido a la variabilidad en los datos, este resultado no es concluyente y no podemos estar seguros de que esta diferencia sea significativa.
 	2.	Categoria Bajo: En la categoría “Bajo”, la tasa de emancipación es, en promedio, 0.39 puntos porcentuales menor
